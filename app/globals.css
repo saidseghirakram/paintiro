@@ -1,26 +1,343 @@
 @import "tailwindcss";
+@config "../tailwind.config.ts";
 
+/* ------------------------------------------------------------------ */
+/* Brand tokens — change the colors here                               */
+/* ------------------------------------------------------------------ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --red: #e8372c;
+  --red-dark: #c42a20;
+  --white: #ffffff;
+  /* Page surface: PAINTIRO white. */
+  --surface: #ffffff;
+  /* Hero only: matches the studio background baked into the video frames. */
+  --bg: #d0cfcb;
+  --ink: #141414;
+  --muted: #6b6b6b;
+
+  --nav-h: 64px;
+  --nav-px: 20px;
+  --ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@media (min-width: 900px) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --nav-h: 80px;
+    --nav-px: 40px;
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Base                                                               */
+/* ------------------------------------------------------------------ */
+html {
+  -webkit-text-size-adjust: 100%;
+  /* Hide the scrollbar visually, scrolling still works. */
+  scrollbar-width: none;
+}
+html::-webkit-scrollbar {
+  display: none;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  overflow-x: hidden;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-body), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--red);
+  color: var(--white);
+}
+
+:focus-visible {
+  outline: 1px solid var(--red);
+  outline-offset: 4px;
+}
+
+/* Lenis recommended styles */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis:not(.lenis-autoToggle).lenis-stopped {
+  overflow: clip;
+}
+.lenis [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-smooth iframe {
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Typography helpers                                                  */
+/* ------------------------------------------------------------------ */
+.font-heading {
+  font-family: var(--font-heading), Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+/* Small uppercase label used by nav links, buttons and indicators. */
+.label {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+@media (min-width: 900px) {
+  .label {
+    font-size: 13px;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ */
+/* Links and buttons                                                   */
+/* ------------------------------------------------------------------ */
+
+/* Thin red underline growing from left to right on hover / focus. */
+.link-underline {
+  position: relative;
+  display: inline-block;
+  padding-block: 6px;
+}
+.link-underline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--red);
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: transform 500ms var(--ease-out);
+}
+.link-underline:hover::after,
+.link-underline:focus-visible::after,
+.link-underline[aria-current="true"]::after {
+  transform: scaleX(1);
+  transform-origin: left center;
+}
+
+/* Outlined button: red fill rises from the bottom on hover. */
+.btn-outline {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 22px;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  overflow: hidden;
+  isolation: isolate;
+  white-space: nowrap;
+  transition:
+    color 400ms var(--ease-out),
+    border-color 400ms var(--ease-out);
+}
+.btn-outline::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--red);
+  transform: scaleY(0);
+  transform-origin: bottom center;
+  transition: transform 400ms var(--ease-out);
+}
+.btn-outline:hover,
+.btn-outline:focus-visible {
+  color: var(--white);
+  border-color: var(--red);
+}
+.btn-outline:hover::before,
+.btn-outline:focus-visible::before {
+  transform: scaleY(1);
+}
+
+/* Filled red button (brand), turns ink on hover. */
+.btn-red {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 30px;
+  background: var(--red);
+  color: var(--white);
+  white-space: nowrap;
+  transition: background-color 400ms var(--ease-out);
+}
+.btn-red:hover,
+.btn-red:focus-visible {
+  background: var(--ink);
+}
+
+/* ------------------------------------------------------------------ */
+/* Intro states (set before hydration to avoid any flash)              */
+/* ------------------------------------------------------------------ */
+
+/* Navbar items wait for the loader before fading in. */
+[data-nav-intro] {
+  opacity: 0;
+}
+
+/* Hero title words start below their mask. */
+.hero-word {
+  display: inline-block;
+  transform: translateY(110%);
+  will-change: transform;
+}
+.hero-subtitle {
+  opacity: 0;
+}
+
+/* Scroll hint line: a red segment travels from top to bottom. */
+.hint-line {
+  position: relative;
+  width: 1px;
+  height: 40px;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+  overflow: hidden;
+}
+.hint-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--red);
+  transform: scaleY(0);
+  transform-origin: top center;
+  animation: hint-fill 2s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+}
+@keyframes hint-fill {
+  0% {
+    transform: scaleY(0);
+    transform-origin: top center;
+  }
+  50% {
+    transform: scaleY(1);
+    transform-origin: top center;
+  }
+  50.01% {
+    transform-origin: bottom center;
+  }
+  100% {
+    transform: scaleY(0);
+    transform-origin: bottom center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-nav-intro],
+  .hero-subtitle {
+    opacity: 1;
+  }
+  .hero-word {
+    transform: none;
+  }
+  .hint-line::after {
+    animation: none;
+    transform: scaleY(1);
+  }
+  .link-underline::after,
+  .btn-outline,
+  .btn-outline::before,
+  .btn-red {
+    transition: none;
+  }
+}
+
+/* Distributor map: soft pulse around pins */
+.map-pulse {
+  opacity: 0.25;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: map-pulse 2.4s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+@keyframes map-pulse {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-pulse {
+    animation: none;
+  }
+}
+
+/* Factory: raw powder falling out of the silos */
+.factory-fall {
+  animation: factory-fall 1.05s cubic-bezier(0.55, 0, 1, 0.45) infinite;
+}
+@keyframes factory-fall {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(50px);
+    opacity: 0;
+  }
+}
+
+/* 10-year test: slanted rain */
+.weather-rain {
+  background-image: repeating-linear-gradient(
+    105deg,
+    transparent 0 14px,
+    rgba(255, 255, 255, 0.55) 14px 15px,
+    transparent 15px 31px
+  );
+  background-size: 200% 200%;
+  animation: weather-rain 0.5s linear infinite;
+}
+@keyframes weather-rain {
+  to {
+    background-position: -62px 220px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .factory-fall,
+  .weather-rain {
+    animation: none;
+  }
+}
+
+/* Hero: soft window-light shadows drifting over the product tint (Klimt Wine style). */
+.gobo {
+  z-index: 0;
+  background:
+    linear-gradient(118deg, transparent 8%, rgba(30, 28, 20, 0.11) 14%, rgba(30, 28, 20, 0.11) 24%, transparent 31%),
+    linear-gradient(118deg, transparent 38%, rgba(30, 28, 20, 0.08) 44%, rgba(30, 28, 20, 0.08) 52%, transparent 58%),
+    linear-gradient(28deg, transparent 62%, rgba(30, 28, 20, 0.07) 70%, transparent 80%);
+  filter: blur(38px);
+  mix-blend-mode: multiply;
+  animation: gobo-drift 18s ease-in-out infinite alternate;
+}
+
+@keyframes gobo-drift {
+  from { transform: translate3d(-2%, -1%, 0) rotate(-1deg); }
+  to { transform: translate3d(2%, 1.5%, 0) rotate(1deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gobo { animation: none; }
 }
