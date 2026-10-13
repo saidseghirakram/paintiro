@@ -18,9 +18,9 @@ import {
 } from "@/lib/chapters";
 import { MAX_DPR_3D, MAX_DPR_3D_MOBILE, SCROLL_LENGTH, SCRUB } from "@/lib/config";
 import type { Content, ProductCopy } from "@/lib/content";
-import { getSiteState, scrollToTarget, useSiteState } from "@/lib/store";
+import { getSiteState, scrollToTarget, setSiteState, useSiteState } from "@/lib/store";
 import { type Mascot, useMascot } from "@/lib/mascot";
-import { LABEL_FRONT_YAW, PRODUCT_HEIGHT, useProductModels } from "@/lib/useProductModels";
+import { LABEL_FRONT_YAW, nextFrame, PRODUCT_HEIGHT, useProductModels } from "@/lib/useProductModels";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import HeroText, { type HeroTextHandle } from "./HeroText";
 import ProductIndicator, { type ProductIndicatorHandle } from "./ProductIndicator";
@@ -124,29 +124,54 @@ export default function ProductShowcase({
   const debug = useDebugFlag();
   const lenis = useSiteState((s) => s.lenis);
 
+  /**
+   * WebGL context and lighting environment, created once at mount: both are long
+   * blocking calls, done here before the loader mascot starts moving instead of
+   * in the middle of its animation.
+   */
+  const glRef = useRef<{ renderer: THREE.WebGLRenderer; environment: THREE.Texture } | null>(null);
   useEffect(() => {
-    const section = sectionRef.current;
-    const stage = stageRef.current;
     const canvas = canvasRef.current;
-    if (!models || !section || !stage || !canvas) return;
-
-    // Renderer: physically based, ACES tone mapping, soft shadows, transparent so the tint shows.
-    const renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      alpha: true,
-      powerPreference: "high-performance",
-    });
+    if (!canvas) return;
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: true,
+        alpha: true,
+        powerPreference: "high-performance",
+      });
+    } catch {
+      // No WebGL: never keep the visitor on the loader.
+      setSiteState({ loadProgress: 1 });
+      return;
+    }
+    // Physically based, ACES tone mapping, soft shadows, transparent so the tint shows.
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.setClearColor(0x000000, 0);
-
-    const scene = new THREE.Scene();
     const pmrem = new THREE.PMREMGenerator(renderer);
     const environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+    glRef.current = { renderer, environment };
+    return () => {
+      glRef.current = null;
+      environment.dispose();
+      renderer.dispose();
+    };
+  }, []);
+
+  useEffect(() => {
+    const section = sectionRef.current;
+    const stage = stageRef.current;
+    const gl = glRef.current;
+    if (!models || !section || !stage || !gl) return;
+    const { renderer, environment } = gl;
+
+    const scene = new THREE.Scene();
     scene.environment = environment;
     scene.environmentIntensity = 0.85;
 
@@ -426,8 +451,13 @@ export default function ProductShowcase({
       rig.armRight.rotation.z = right;
     };
 
-    const render = (time: number) => {
-      if (!state.visible) return;
+    const render = (time: number, force = false) => {
+      if (!state.visible || !ready) return;
+      // Hidden under the loader: don't spend frames the loader animation needs.
+      if (!force && !reducedMotion) {
+        const site = getSiteState();
+        if (!site.revealing && !site.introDone) return;
+      }
       // The mascot joins as soon as it is loaded (it never blocks the products).
       if (!m.rig && mascotRef.current) {
         m.rig = mascotRef.current;
@@ -542,6 +572,50 @@ export default function ProductShowcase({
 
     const tick = (time: number) => render(time);
 
+    /**
+     * Warm-up while the loader is on screen: lighting environment, GPU texture
+     * uploads and shader compilation, each in its own frame (shaders in parallel
+     * when the browser supports it), so the loader mascot never stutters.
+     * The loader's last 10% is this warm-up.
+     */
+    let ready = false;
+    let cancelled = false;
+    const warmUp = async () => {
+      try {
+        await nextFrame();
+        if (cancelled) return;
+
+        if (!m.rig && mascotRef.current) {
+          m.rig = mascotRef.current;
+          scene.add(m.rig.root);
+        }
+        const textures = new Set<THREE.Texture>();
+        scene.traverse((object) => {
+          const mesh = object as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+            const map = (material as THREE.MeshStandardMaterial).map;
+            if (map) textures.add(map);
+          }
+        });
+        for (const texture of textures) {
+          await nextFrame();
+          if (cancelled) return;
+          renderer.initTexture(texture);
+        }
+        await nextFrame();
+        if (cancelled) return;
+        await renderer.compileAsync(scene, camera);
+      } catch {
+        // Anything left compiles on first use.
+      }
+      if (cancelled) return;
+      ready = true;
+      render(state.time, true);
+      setSiteState({ loadProgress: 1 });
+    };
+    void warmUp();
+
     const resize = () => {
       state.width = stage.clientWidth;
       state.height = stage.clientHeight;
@@ -567,7 +641,7 @@ export default function ProductShowcase({
       // Hovering the mascot makes it wave (and shows it can be clicked).
       const rig = m.rig;
       if (!rig || !rig.root.visible) return;
-      const rect = canvas.getBoundingClientRect();
+      const rect = renderer.domElement.getBoundingClientRect();
       ndc.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
       raycaster.setFromCamera(ndc, camera);
       const hover = raycaster.intersectObjects(rig.meshes, false).length > 0;
@@ -674,9 +748,9 @@ export default function ProductShowcase({
       blobTexture.dispose();
       floor.geometry.dispose();
       (floor.material as THREE.Material).dispose();
-      environment.dispose();
-      pmrem.dispose();
-      renderer.dispose();
+      cancelled = true;
+      // Renderer and environment belong to the mount effect (reused on re-runs).
+      renderer.renderLists.dispose();
       stage.style.backgroundColor = "";
     };
   }, [models, mascotRef, scrub, reducedMotion, debug]);

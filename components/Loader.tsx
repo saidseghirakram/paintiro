@@ -8,7 +8,7 @@ import { useReducedMotion } from "@/lib/useReducedMotion";
 import LoaderMascot, { type LoaderMascotHandle } from "./LoaderMascot";
 
 /** Time (ms) left after 100% for the mascot to reach the end of the line and celebrate. */
-const CELEBRATION_TIME = 1700;
+const CELEBRATION_TIME = 2300;
 
 type LoaderProps = { line: string };
 
@@ -55,6 +55,7 @@ export default function Loader({ line }: LoaderProps) {
     const wait = Math.max(LOADER_MIN_TIME - performance.now(), reducedMotion ? 0 : CELEBRATION_TIME);
     const timer = window.setTimeout(() => {
       leaving.current = true;
+      setSiteState({ revealing: true });
       mascotRef.current?.leave();
       const finish = () => {
         setSiteState({ introDone: true });

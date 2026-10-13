@@ -5,6 +5,7 @@
 import type { IconName } from "@/components/ui/Icon";
 import type { ColorFamilyKey } from "./colors";
 import type { Locale } from "./content";
+import type { CategorySlug } from "./catalog";
 import type { ProductId } from "./products";
 
 type Link = { label: string; href: string };
@@ -38,7 +39,11 @@ export type SectionsContent = {
     cta: string;
     /** Label before the recommended product name. */
     productLabel: string;
+    /** Label of the link that opens the category page. */
+    explore: string;
     items: {
+      /** URL segment of the category page (/[locale]/solutions/[slug]). */
+      slug: CategorySlug;
       icon: IconName;
       title: string;
       text: string;
@@ -180,13 +185,14 @@ export const sectionsContent: Record<Locale, SectionsContent> = {
       scrollHint: "Scroll",
       cta: "Find a distributor",
       productLabel: "Recommended",
+      explore: "Explore the range",
       items: [
-        { icon: "interior", title: "Interior", text: "Perfect finishes for living spaces.", details: "Living rooms, bedrooms and kitchens deserve a finish that is smooth, washable and rich in color, coat after coat.", image: "/solutions/interior.webp", productId: "irovella" },
-        { icon: "exterior", title: "Exterior", text: "Durable protection for façades.", details: "Rain, sun and wind: façade paint that resists the weather, keeps its color for years and dries fast.", image: "/solutions/exterior.webp", productId: "irofacade" },
-        { icon: "ceiling", title: "Ceilings", text: "Bright, seamless ceilings.", details: "A deep matt white that goes on easily, never drips and dries into one seamless film.", image: "/solutions/ceiling.webp", productId: "plafonya" },
-        { icon: "renovation", title: "Renovation", text: "New life for old surfaces.", details: "Unify tired, stained or uneven walls with a 98% opacity fixer before the finishing coat.", image: "/solutions/renovation.webp", productId: "fix-one" },
-        { icon: "primer", title: "Preparation", text: "Fixers and primers that hold.", details: "Powdery or porous supports are locked and protected so the paint grips and lasts.", image: "/solutions/preparation.webp", productId: "irocryl-4l" },
-        { icon: "pro", title: "Professionals", text: "Large formats for job sites.", details: "18 and 20 kg formats, consistent quality from one batch to the next, made for painters who work every day.", image: "/solutions/professionals.webp", productId: "irofacade" },
+        { slug: "interior", icon: "interior", title: "Interior", text: "Perfect finishes for living spaces.", details: "Living rooms, bedrooms and kitchens deserve a finish that is smooth, washable and rich in color, coat after coat.", image: "/solutions/interior.webp", productId: "irovella" },
+        { slug: "exterior", icon: "exterior", title: "Exterior", text: "Durable protection for façades.", details: "Rain, sun and wind: façade paint that resists the weather, keeps its color for years and dries fast.", image: "/solutions/exterior.webp", productId: "irofacade" },
+        { slug: "ceilings", icon: "ceiling", title: "Ceilings", text: "Bright, seamless ceilings.", details: "A deep matt white that goes on easily, never drips and dries into one seamless film.", image: "/solutions/ceiling.webp", productId: "plafonya" },
+        { slug: "renovation", icon: "renovation", title: "Renovation", text: "New life for old surfaces.", details: "Unify tired, stained or uneven walls with a 98% opacity fixer before the finishing coat.", image: "/solutions/renovation.webp", productId: "fix-one" },
+        { slug: "preparation", icon: "primer", title: "Preparation", text: "Fixers and primers that hold.", details: "Powdery or porous supports are locked and protected so the paint grips and lasts.", image: "/solutions/preparation.webp", productId: "irocryl-4l" },
+        { slug: "professionals", icon: "pro", title: "Professionals", text: "Large formats for job sites.", details: "18 and 20 kg formats, consistent quality from one batch to the next, made for painters who work every day.", image: "/solutions/professionals.webp", productId: "irofacade" },
       ],
     },
     colors: {
@@ -388,13 +394,14 @@ export const sectionsContent: Record<Locale, SectionsContent> = {
       scrollHint: "Défiler",
       cta: "Trouver un distributeur",
       productLabel: "Recommandé",
+      explore: "Voir la gamme",
       items: [
-        { icon: "interior", title: "Intérieur", text: "Des finitions parfaites pour vos pièces.", details: "Salons, chambres et cuisines méritent une finition lisse, lessivable et riche en couleur, couche après couche.", image: "/solutions/interior.webp", productId: "irovella" },
-        { icon: "exterior", title: "Extérieur", text: "Une protection durable des façades.", details: "Pluie, soleil et vent : une peinture façade qui résiste aux intempéries, garde sa couleur des années et sèche vite.", image: "/solutions/exterior.webp", productId: "irofacade" },
-        { icon: "ceiling", title: "Plafonds", text: "Des plafonds lumineux, sans raccord.", details: "Un blanc mat profond, facile à appliquer, qui ne goutte pas et sèche en un film tendu sans raccord.", image: "/solutions/ceiling.webp", productId: "plafonya" },
-        { icon: "renovation", title: "Rénovation", text: "Une nouvelle vie pour les vieux murs.", details: "Unifiez les murs fatigués, tachés ou irréguliers avec un fixateur 98 % d’opacité avant la finition.", image: "/solutions/renovation.webp", productId: "fix-one" },
-        { icon: "primer", title: "Préparation", text: "Fixateurs et primaires qui tiennent.", details: "Les supports farineux ou poreux sont fixés et protégés pour que la peinture accroche et dure.", image: "/solutions/preparation.webp", productId: "irocryl-4l" },
-        { icon: "pro", title: "Professionnels", text: "Grands formats pour les chantiers.", details: "Formats 18 et 20 kg, qualité constante d’un lot à l’autre, pensés pour les peintres qui travaillent chaque jour.", image: "/solutions/professionals.webp", productId: "irofacade" },
+        { slug: "interior", icon: "interior", title: "Intérieur", text: "Des finitions parfaites pour vos pièces.", details: "Salons, chambres et cuisines méritent une finition lisse, lessivable et riche en couleur, couche après couche.", image: "/solutions/interior.webp", productId: "irovella" },
+        { slug: "exterior", icon: "exterior", title: "Extérieur", text: "Une protection durable des façades.", details: "Pluie, soleil et vent : une peinture façade qui résiste aux intempéries, garde sa couleur des années et sèche vite.", image: "/solutions/exterior.webp", productId: "irofacade" },
+        { slug: "ceilings", icon: "ceiling", title: "Plafonds", text: "Des plafonds lumineux, sans raccord.", details: "Un blanc mat profond, facile à appliquer, qui ne goutte pas et sèche en un film tendu sans raccord.", image: "/solutions/ceiling.webp", productId: "plafonya" },
+        { slug: "renovation", icon: "renovation", title: "Rénovation", text: "Une nouvelle vie pour les vieux murs.", details: "Unifiez les murs fatigués, tachés ou irréguliers avec un fixateur 98 % d’opacité avant la finition.", image: "/solutions/renovation.webp", productId: "fix-one" },
+        { slug: "preparation", icon: "primer", title: "Préparation", text: "Fixateurs et primaires qui tiennent.", details: "Les supports farineux ou poreux sont fixés et protégés pour que la peinture accroche et dure.", image: "/solutions/preparation.webp", productId: "irocryl-4l" },
+        { slug: "professionals", icon: "pro", title: "Professionnels", text: "Grands formats pour les chantiers.", details: "Formats 18 et 20 kg, qualité constante d’un lot à l’autre, pensés pour les peintres qui travaillent chaque jour.", image: "/solutions/professionals.webp", productId: "irofacade" },
       ],
     },
     colors: {

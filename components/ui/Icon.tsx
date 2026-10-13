@@ -125,6 +125,18 @@ const paths = {
   arrow: <path d="M4.5 12h15M14 6.5l5.5 5.5-5.5 5.5" />,
   arrowLeft: <path d="M19.5 12h-15M10 6.5 4.5 12l5.5 5.5" />,
   close: <path d="m6 6 12 12M18 6 6 18" />,
+  plus: <path d="M12 5v14M5 12h14" />,
+  check: <path d="m5 12.5 4.5 4.5L19 7.5" />,
+  download: <path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14" />,
+  list: <path d="M4 6.5h16M4 12h16M4 17.5h16" />,
+  grid: (
+    <>
+      <rect x="4" y="4" width="6.5" height="6.5" rx="0.5" />
+      <rect x="13.5" y="4" width="6.5" height="6.5" rx="0.5" />
+      <rect x="4" y="13.5" width="6.5" height="6.5" rx="0.5" />
+      <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="0.5" />
+    </>
+  ),
   play: <path d="M8 5.5v13l10-6.5-10-6.5Z" fill="currentColor" stroke="none" />,
   pin: (
     <>

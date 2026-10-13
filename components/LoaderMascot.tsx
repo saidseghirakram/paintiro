@@ -124,17 +124,27 @@ export default function LoaderMascot({ reducedMotion, ref }: LoaderMascotProps) 
       trackWidth: 4,
       mascot: null as Mascot | null,
       bornAt: -1,
+      /** Position on the track and its velocity (critically damped spring: no snaps, no overshoot). */
       x: 0,
+      vx: 0,
       painted: 0,
+      /** Hop cycle: integer part = hop count, fraction = progress through the hop. */
       phase: 0,
+      /** 0 = waiting, 1 = travelling; eased, so hop size and pace change smoothly. */
+      gait: 0,
+      /** Eased pose values (every visible value is smoothed: nothing jumps between frames). */
+      yaw: 0,
+      lean: 0,
+      armLeft: 0.15,
+      armRight: 0.15,
       squash: 0,
       squashVelocity: 0,
       flipsDone: 0,
       flipHop: -1,
-      celebrated: false,
+      /** Celebration: queued for the next landing, so it starts from the ground. */
+      celebrateHop: -1,
       celebrateAt: -1,
-      /** The celebration jump has landed (one big splash). */
-      celebrationLanded: false,
+      landedAt: -1,
       launchAt: -1,
       lastTime: -1,
       lastHop: 0,
@@ -142,14 +152,24 @@ export default function LoaderMascot({ reducedMotion, ref }: LoaderMascotProps) 
 
     let disposed = false;
     loadMascot(LOADER_MASCOT_COLOR)
-      .then((mascot) => {
+      .then(async (mascot) => {
+        if (disposed) {
+          mascot.dispose();
+          return;
+        }
+        // Compile its shaders before it appears, so the pop-in never hitches.
+        mascot.root.scale.setScalar(0);
+        scene.add(mascot.root);
+        try {
+          await renderer.compileAsync(scene, camera);
+        } catch {
+          // Compiles on first draw instead.
+        }
         if (disposed) {
           mascot.dispose();
           return;
         }
         state.mascot = mascot;
-        mascot.root.scale.setScalar(0);
-        scene.add(mascot.root);
       })
       .catch(() => {
         // No mascot: the painted stroke still shows the progress.
@@ -172,18 +192,26 @@ export default function LoaderMascot({ reducedMotion, ref }: LoaderMascotProps) 
       if (!state.painted) state.x = state.trackLeft;
     };
 
+    /** Frame-rate independent easing factor towards a target. */
+    const ease = (rate: number, dt: number) => 1 - Math.exp(-rate * dt);
+
     const tick = (time: number) => {
-      const dt = state.lastTime < 0 ? 0 : Math.min(0.05, time - state.lastTime);
+      const dt = state.lastTime < 0 ? 0 : Math.min(1 / 30, time - state.lastTime);
       state.lastTime = time;
       const c = control.current;
       const mascot = state.mascot;
       const motion = reducedMotion ? 0 : 1;
 
-      // Target: the painted end follows the real progress; the mascot runs to it.
+      // The mascot runs to the painted end of the real progress (spring, never jumps).
       const target = state.trackLeft + state.trackWidth * c.progress;
-      const before = state.x;
-      state.x += (target - state.x) * Math.min(1, dt * (reducedMotion ? 20 : 2.6));
-      const speed = dt > 0 ? (state.x - before) / dt : 0;
+      if (reducedMotion) {
+        state.x = target;
+        state.vx = 0;
+      } else {
+        const omega = 3.4;
+        state.vx += (omega * omega * (target - state.x) - 2 * omega * state.vx) * dt;
+        state.x += state.vx * dt;
+      }
       state.painted = Math.max(state.painted, state.x - state.trackLeft);
       stroke.scale.x = Math.max(0.0001, state.painted);
 
@@ -197,7 +225,7 @@ export default function LoaderMascot({ reducedMotion, ref }: LoaderMascotProps) 
           drop.mesh.position.y = -thickness;
           drop.velocity.set(0, 0, 0);
         }
-        drop.mesh.scale.multiplyScalar(drop.life > 0.3 ? 1 : 0.9);
+        if (drop.life < 0.3) drop.mesh.scale.multiplyScalar(Math.pow(0.002, dt));
         drop.mesh.visible = drop.life > 0;
       }
 
@@ -207,41 +235,53 @@ export default function LoaderMascot({ reducedMotion, ref }: LoaderMascotProps) 
         // Elastic pop-in.
         const appear =
           born >= 1 ? 1 : Math.pow(2, -10 * born) * Math.sin((born * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1;
-
-        // Finished: one big celebration jump, then it waves until the curtain leaves.
-        const done = c.progress >= 0.999 && Math.abs(target - state.x) < unit * 0.05;
-        if (done && !state.celebrated) {
-          state.celebrated = true;
-          state.celebrateAt = time;
-        }
         if (c.leaving && state.launchAt < 0) state.launchAt = time;
 
-        // Hop cycle (keeps hopping while it travels, softer when it waits).
-        const travelling = Math.abs(target - state.x) > unit * 0.04;
-        state.phase += dt * HOP_RATE * (travelling ? 1 : 0.75) * motion;
+        // Gait: eased between waiting (small, slower hops) and travelling.
+        const distance = Math.abs(target - state.x);
+        state.gait += (clamp01(distance / (unit * 0.25)) - state.gait) * ease(4, dt);
+
+        // Hop cycle; frozen during the celebration.
+        const celebrating = state.celebrateAt >= 0;
+        if (!celebrating) state.phase += dt * HOP_RATE * (0.75 + 0.25 * state.gait) * motion;
         const hopIndex = Math.floor(state.phase);
         const t = state.phase - hopIndex;
 
-        // Queue a flip on the next hop when a quarter is passed.
+        // 100% reached: the celebration starts at the next landing.
+        if (c.progress >= 0.999 && distance < unit * 0.05 && state.celebrateHop < 0) state.celebrateHop = hopIndex + 1;
+        if (!celebrating && state.celebrateHop >= 0 && hopIndex >= state.celebrateHop) {
+          state.celebrateAt = time;
+          state.phase = state.celebrateHop;
+        }
+
+        // A flip on the hop after each quarter is passed.
         if (state.flipsDone < FLIP_AT.length && c.progress >= FLIP_AT[state.flipsDone] && state.flipHop < 0) {
           state.flipHop = hopIndex + 1;
           state.flipsDone++;
         }
-        const flipping = state.flipHop === hopIndex;
+        const flipping = !celebrating && state.flipHop === hopIndex;
         if (state.flipHop >= 0 && hopIndex > state.flipHop) state.flipHop = -1;
 
-        let height = Math.sin(t * Math.PI) * HOP_HEIGHT * unit * (flipping ? 1.8 : 1) * motion;
-        let flip = flipping ? -Math.PI * 2 * easeInOut(clamp01((t - 0.1) / 0.8)) : 0;
+        const hopSize = HOP_HEIGHT * unit * (0.55 + 0.45 * state.gait) * (flipping ? 1.8 : 1);
+        let height = celebrating ? 0 : Math.sin(t * Math.PI) * hopSize * motion;
+        let flip = flipping ? -Math.PI * 2 * easeInOut(clamp01((t - 0.08) / 0.84)) : 0;
+        let airMax = hopSize;
 
-        // Celebration: a high backflip, then a happy idle.
-        if (state.celebrateAt >= 0) {
+        // Celebration: a high backflip, then a happy bounce that starts from the ground.
+        if (celebrating) {
           const k = clamp01((time - state.celebrateAt) / 1.1);
           if (k < 1) {
-            height = Math.sin(k * Math.PI) * HOP_HEIGHT * unit * 2.6 * motion;
+            airMax = HOP_HEIGHT * unit * 2.6;
+            height = Math.sin(k * Math.PI) * airMax * motion;
             flip = Math.PI * 2 * easeInOut(k) * motion;
           } else {
-            height = Math.abs(Math.sin(time * 5)) * unit * 0.12 * motion;
-            flip = 0;
+            if (state.landedAt < 0) {
+              state.landedAt = time;
+              state.squashVelocity += 5;
+              splash(state.x, 14, 1.6);
+            }
+            airMax = unit * 0.14;
+            height = Math.abs(Math.sin((time - state.landedAt) * 5)) * airMax * motion;
           }
         }
 
@@ -253,42 +293,44 @@ export default function LoaderMascot({ reducedMotion, ref }: LoaderMascotProps) 
           flip += k * 9 * motion;
         }
 
-        // Landing / take-off kicks the squash spring, and a landing splashes paint.
+        // Each landing kicks the squash spring and splashes paint.
         if (hopIndex !== state.lastHop) {
           state.lastHop = hopIndex;
-          if (motion && state.celebrateAt < 0) {
-            state.squashVelocity += 4.5;
-            splash(state.x, travelling ? 6 : 3, flipping ? 1.3 : 1);
+          if (motion && !celebrating) {
+            state.squashVelocity += 3.5 + 1.5 * state.gait;
+            splash(state.x, Math.round(3 + 3 * state.gait), flipping ? 1.3 : 1);
           }
-        }
-        if (state.celebrateAt >= 0 && !state.celebrationLanded && time - state.celebrateAt > 1.1) {
-          state.celebrationLanded = true;
-          state.squashVelocity += 5;
-          splash(state.x, 14, 1.6);
         }
         state.squashVelocity += (-170 * state.squash - 11 * state.squashVelocity) * dt;
         state.squash = Math.max(-0.35, Math.min(0.45, state.squash + state.squashVelocity * dt));
 
-        const air = clamp01(height / (HOP_HEIGHT * unit));
+        const air = clamp01(height / Math.max(1e-6, airMax));
         mascot.root.position.set(state.x, height + launch, 0);
         mascot.root.scale.setScalar(appear);
-        // Faces us, turned a little towards where it is heading; leans into the run.
-        const lean = THREE.MathUtils.clamp(-speed * 0.12, -0.35, 0.35) * motion;
-        mascot.root.rotation.set(0, travelling ? 0.38 : 0.12 * Math.sin(time * 1.3), lean, "YXZ");
+
+        // Turned towards where it heads while travelling, looks around while waiting; leans into the run.
+        const yawGoal = (0.38 * state.gait + 0.12 * Math.sin(time * 1.3) * (1 - state.gait)) * motion;
+        state.yaw += (yawGoal - state.yaw) * ease(5, dt);
+        const leanGoal = THREE.MathUtils.clamp(-state.vx * 0.09, -0.3, 0.3) * motion;
+        state.lean += (leanGoal - state.lean) * ease(8, dt);
+        mascot.root.rotation.set(0, state.yaw, state.lean, "YXZ");
         mascot.body.rotation.set(flip, 0, 0);
         mascot.body.scale.set(1 + state.squash * 0.6, 1 - state.squash, 1 + state.squash * 0.6);
         mascot.body.position.y = (mascot.height / 2) * (1 - state.squash);
 
-        // Arms: flap while airborne, wave both when finished.
+        // Arms: flap while airborne, wave both after the celebration (eased, never snap).
         const flap = Math.sin(time * 14) * 0.25 * air;
         let left = 0.15 + air * 1.0 + flap;
         let right = 0.15 + air * 1.0 - flap;
-        if (state.celebrateAt >= 0 && time - state.celebrateAt > 1.1) {
+        if (state.landedAt >= 0) {
           left = 1.3 + Math.sin(time * 11) * 0.35;
           right = 1.3 + Math.sin(time * 11 + Math.PI) * 0.35;
         }
-        mascot.armLeft.rotation.z = -left * (motion ? 1 : 0.2);
-        mascot.armRight.rotation.z = right * (motion ? 1 : 0.2);
+        const scale = motion ? 1 : 0.2;
+        state.armLeft += (left * scale - state.armLeft) * ease(16, dt);
+        state.armRight += (right * scale - state.armRight) * ease(16, dt);
+        mascot.armLeft.rotation.z = -state.armLeft;
+        mascot.armRight.rotation.z = state.armRight;
       }
 
       renderer.render(scene, camera);

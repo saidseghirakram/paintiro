@@ -1,6 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { COLOR_FAMILIES, SWATCHES, type ColorFamilyKey } from "@/lib/colors";
@@ -45,25 +54,33 @@ function fanAngle(i: number, count: number): number {
 
 /**
  * 08 — Colors that inspire. A 3D PAINTIRO fan deck: on scroll the deck rises and
- * fans open card by card (pinned, scrubbed). Picking a card lifts it out of the
- * deck and floods the whole section with that color from the card.
+ * fans open card by card (pinned, scrubbed), then PAINTIRO red floods out of the
+ * deck until it covers the whole section at the end of the pin. Picking a card
+ * (found from the pointer angle around the rivet, so every card is easy to hit)
+ * lifts it out of the deck and floods the section with its color.
  */
 export default function Colors({ content, locale }: ColorsProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const redRef = useRef<HTMLDivElement>(null);
+  const rivetRef = useRef<HTMLSpanElement>(null);
   const deckRef = useRef<HTMLDivElement>(null);
   const tiltRef = useRef<HTMLDivElement>(null);
   const infoRef = useRef<HTMLDivElement>(null);
   const armsRef = useRef<(HTMLDivElement | null)[]>([]);
   const cardsRef = useRef<(HTMLButtonElement | null)[]>([]);
   const selectedRef = useRef(DEFAULT_INDEX);
-  const openedRef = useRef(false);
+  /** True once the visitor picked a color: the scroll flood no longer applies. */
+  const pickedRef = useRef(false);
   const firstInfo = useRef(true);
 
   const [selected, setSelected] = useState(DEFAULT_INDEX);
   const [hovered, setHovered] = useState<number | null>(null);
   const [background, setBackground] = useState(START_BG);
   const [foreground, setForeground] = useState(textOn(START_BG));
+  /** The scroll-driven red flood covers (most of) the section. */
+  const [redCovers, setRedCovers] = useState(false);
+  const [picked, setPicked] = useState(false);
   const [copied, setCopied] = useState(false);
   const reducedMotion = useReducedMotion();
   const count = SWATCHES.length;
@@ -86,6 +103,7 @@ export default function Colors({ content, locale }: ColorsProps) {
       overlay.style.background = color;
       const finish = () => {
         setBackground(color);
+        if (redRef.current) redRef.current.style.visibility = "hidden";
         gsap.set(overlay, { clipPath: `circle(0px at ${x}px ${y}px)` });
       };
       if (!animate || reducedMotion) {
@@ -108,7 +126,9 @@ export default function Colors({ content, locale }: ColorsProps) {
     (index: number, focus = false) => {
       const next = (index + count) % count;
       if (focus) cardsRef.current[next]?.focus({ preventScroll: true });
-      if (next === selectedRef.current) return;
+      if (next === selectedRef.current && pickedRef.current) return;
+      pickedRef.current = true;
+      setPicked(true);
       selectedRef.current = next;
       setSelected(next);
       flood(next);
@@ -126,27 +146,37 @@ export default function Colors({ content, locale }: ColorsProps) {
     const ctx = gsap.context(() => {
       if (reducedMotion) {
         gsap.set(arms, { rotation: (i: number) => fanAngle(i, count) });
-        openedRef.current = true;
-        flood(selectedRef.current, false);
+        gsap.set(redRef.current, { clipPath: "none" });
+        setRedCovers(true);
         return;
       }
+
+      // PAINTIRO red grows from the rivet; full radius = farthest section corner.
+      const red = redRef.current;
+      const paint = { p: 0 };
+      const drawRed = () => {
+        const rivet = rivetRef.current;
+        if (!red || !rivet) return;
+        const s = section.getBoundingClientRect();
+        const c = rivet.getBoundingClientRect();
+        const x = c.left + c.width / 2 - s.left;
+        const y = c.top + c.height / 2 - s.top;
+        const radius = Math.hypot(Math.max(x, s.width - x), Math.max(y, s.height - y)) + 2;
+        red.style.clipPath = paint.p >= 1 ? "none" : `circle(${radius * paint.p}px at ${x}px ${y}px)`;
+        const covers = paint.p > 0.45;
+        setRedCovers((current) => (current === covers ? current : covers));
+      };
 
       const timeline = gsap.timeline({
         scrollTrigger: {
           trigger: section,
           start: "top top",
-          end: "+=110%",
+          end: "+=170%",
           pin: true,
-          scrub: 1,
+          scrub: 0.6,
           anticipatePin: 1,
           invalidateOnRefresh: true,
-          onUpdate: (self) => {
-            // First full opening: PAINTIRO red floods the room.
-            if (self.progress > 0.9 && !openedRef.current) {
-              openedRef.current = true;
-              flood(selectedRef.current);
-            }
-          },
+          onRefresh: drawRed,
         },
       });
       timeline
@@ -167,11 +197,14 @@ export default function Colors({ content, locale }: ColorsProps) {
           { yPercent: 110, opacity: 0 },
           { yPercent: 0, opacity: 1, duration: 0.5, stagger: 0.06, ease: "power3.out" },
           0,
-        );
+        )
+        // Fully open: red floods out of the deck and reaches every corner before the pin ends.
+        .to(paint, { p: 1, duration: 0.75, ease: "power2.in", onUpdate: drawRed }, 1.3)
+        .to({}, { duration: 0.15 });
     }, section);
 
     return () => ctx.revert();
-  }, [count, flood, reducedMotion]);
+  }, [count, reducedMotion]);
 
   // Selected card lifts out of the deck (along its own axis), hovered card peeks.
   useEffect(() => {
@@ -232,6 +265,49 @@ export default function Colors({ content, locale }: ColorsProps) {
     return () => ctx.revert();
   }, [selected, reducedMotion]);
 
+  /**
+   * The card under the pointer, from its angle around the rivet: the fanned cards
+   * overlap heavily, so hit-testing the card elements leaves only slivers to aim at.
+   */
+  const cardAt = (clientX: number, clientY: number): number | null => {
+    const rivet = rivetRef.current;
+    const deck = deckRef.current;
+    if (!rivet || !deck) return null;
+    const c = rivet.getBoundingClientRect();
+    const dx = clientX - (c.left + c.width / 2);
+    const dy = clientY - (c.top + c.height / 2);
+    const reach = deck.offsetHeight;
+    const distance = Math.hypot(dx, dy);
+    if (distance < reach * 0.1 || distance > reach * 1.2 || dy > reach * 0.1) return null;
+    const angle = Math.atan2(dx, -dy);
+    // Compare with where each card tip really is on screen (the deck is tilted in 3D).
+    let best: number | null = null;
+    let bestGap = Infinity;
+    cardsRef.current.forEach((card, i) => {
+      const tip = card?.querySelector("[data-tip]")?.getBoundingClientRect();
+      if (!tip) return;
+      const gap = Math.abs(Math.atan2(tip.left - c.left - c.width / 2, c.top + c.height / 2 - tip.top) - angle);
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = i;
+      }
+    });
+    return bestGap < 0.2 ? best : null;
+  };
+
+  const onFanMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "mouse") return;
+    const index = cardAt(event.clientX, event.clientY);
+    setHovered((current) => (current === index ? current : index));
+  };
+
+  const onFanClick = (event: MouseEvent<HTMLDivElement>) => {
+    // Keyboard "clicks" (Enter/Space on a focused card) have no pointer position: the card handles them.
+    if (event.detail === 0) return;
+    const index = cardAt(event.clientX, event.clientY);
+    if (index !== null) select(index);
+  };
+
   const onDeckKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "ArrowRight") {
       event.preventDefault();
@@ -254,7 +330,10 @@ export default function Colors({ content, locale }: ColorsProps) {
   };
 
   const swatch = SWATCHES[selected];
-  const accent = isNearRed(background) ? foreground : RED;
+  // Before any pick, the visible surface is the scroll flood (red) or the start color.
+  const surface = picked ? background : redCovers ? RED : START_BG;
+  const ink = picked ? foreground : textOn(surface);
+  const accent = isNearRed(surface) ? ink : RED;
   const activeFamily: ColorFamilyKey = swatch.family;
 
   return (
@@ -263,9 +342,16 @@ export default function Colors({ content, locale }: ColorsProps) {
       id="colors"
       aria-label={content.title}
       className="relative h-svh overflow-hidden transition-[color] duration-500"
-      style={{ background, color: foreground }}
+      style={{ background, color: ink }}
     >
-      {/* Paint flood layer */}
+      {/* Scroll flood: PAINTIRO red, revealed from the rivet */}
+      <div
+        ref={redRef}
+        aria-hidden="true"
+        className="absolute inset-0 z-0"
+        style={{ background: RED, clipPath: "circle(0px at 50% 100%)" }}
+      />
+      {/* Paint flood layer (picked color) */}
       <div ref={overlayRef} aria-hidden="true" className="absolute inset-0 z-0" style={{ clipPath: "circle(0px at 50% 50%)" }} />
 
       <div className="relative z-10 mx-auto flex h-full max-w-[1600px] flex-col px-[var(--nav-px)] pt-[calc(var(--nav-h)+clamp(8px,2svh,24px))]">
@@ -340,7 +426,13 @@ export default function Colors({ content, locale }: ColorsProps) {
         </div>
 
         {/* Bottom: the 3D fan deck */}
-        <div className="relative flex flex-1 items-end justify-center [perspective:1600px]">
+        <div
+          className="relative flex flex-1 items-end justify-center [perspective:1600px]"
+          style={{ cursor: hovered === null ? undefined : "pointer" }}
+          onPointerMove={onFanMove}
+          onPointerLeave={() => setHovered(null)}
+          onClick={onFanClick}
+        >
           <div ref={tiltRef} className="relative [transform-style:preserve-3d]">
             <div
               ref={deckRef}
@@ -363,21 +455,21 @@ export default function Colors({ content, locale }: ColorsProps) {
                       cardsRef.current[i] = el;
                     }}
                     type="button"
-                    onClick={() => select(i)}
-                    onPointerEnter={(e) => e.pointerType === "mouse" && setHovered(i)}
-                    onPointerLeave={() => setHovered((h) => (h === i ? null : h))}
+                    onClick={(e) => e.detail === 0 && select(i)}
                     aria-pressed={i === selected}
                     aria-label={`${s.name[locale]} ${s.code}`}
                     tabIndex={i === selected ? 0 : -1}
-                    className="absolute inset-0 flex flex-col overflow-hidden rounded-[3px] bg-white text-left shadow-[0_10px_24px_-16px_rgba(0,0,0,0.4)] outline-offset-4"
+                    className="pointer-events-none absolute inset-0 flex flex-col overflow-hidden rounded-[3px] bg-white p-[3px] text-left shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_10px_24px_-14px_rgba(0,0,0,0.45)] outline-offset-4"
                   >
-                    <span className="block flex-1" style={{ background: s.hex }} />
+                    <span className="block flex-1 rounded-[2px]" style={{ background: s.hex }} />
                     <span className="block px-2 pb-3 pt-2 text-ink">
                       <span className="block truncate text-[9px] font-medium uppercase tracking-[0.12em] min-[900px]:text-[10px]">
                         {s.name[locale]}
                       </span>
                       <span className="tabular mt-1 block text-[9px] text-muted">{s.code}</span>
                     </span>
+                    {/* Top-center marker, used to find the card from the pointer angle */}
+                    <span data-tip className="absolute left-1/2 top-0 block size-0" />
                     {/* Pivot hole of the fan deck */}
                     <span className="absolute bottom-[6%] left-1/2 block size-2 -translate-x-1/2 rounded-full bg-ink/20" />
                   </button>
@@ -385,6 +477,7 @@ export default function Colors({ content, locale }: ColorsProps) {
               ))}
               {/* Rivet */}
               <span
+                ref={rivetRef}
                 aria-hidden="true"
                 className="absolute bottom-[calc(var(--card-h)*0.08-8px)] left-1/2 z-[60] block size-4 -translate-x-1/2 rounded-full border-2 border-white bg-ink shadow"
                 style={{ transform: "translateZ(120px)" }}

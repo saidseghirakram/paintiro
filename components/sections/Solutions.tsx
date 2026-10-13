@@ -1,17 +1,22 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MouseEvent } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import type { Locale } from "@/lib/content";
 import type { SectionsContent } from "@/lib/content-sections";
 import { getProduct } from "@/lib/products";
+import { coverWithCurtain } from "@/lib/transition";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import Icon from "../ui/Icon";
 
 gsap.registerPlugin(ScrollTrigger);
 
-type SolutionsProps = { content: SectionsContent["solutions"] };
+type SolutionsProps = { content: SectionsContent["solutions"]; locale: Locale };
+type Solution = SectionsContent["solutions"]["items"][number];
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -21,7 +26,8 @@ const pad = (n: number) => String(n).padStart(2, "0");
  * Inside, photos move with a light parallax and texts slide in as each panel arrives.
  * With reduced motion, the panels are simply stacked vertically.
  */
-export default function Solutions({ content }: SolutionsProps) {
+export default function Solutions({ content, locale }: SolutionsProps) {
+  const router = useRouter();
   const sectionRef = useRef<HTMLElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLSpanElement>(null);
@@ -102,6 +108,18 @@ export default function Solutions({ content }: SolutionsProps) {
     return () => ctx.revert();
   }, [reducedMotion, count]);
 
+  // Opening a category: the panel photo grows to full screen, then the category page takes over.
+  const openCategory = (event: MouseEvent<HTMLAnchorElement>, item: Solution) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || reducedMotion) return;
+    event.preventDefault();
+    const href = `/${locale}/solutions/${item.slug}`;
+    const photo = event.currentTarget.closest("[data-panel]")?.querySelector("[data-panel-photo]");
+    router.prefetch(href);
+    coverWithCurtain({ from: photo ?? event.currentTarget, color: "#141414", image: item.image, tint: true, label: item.title }).then(
+      () => router.push(href),
+    );
+  };
+
   return (
     <section
       ref={sectionRef}
@@ -156,8 +174,14 @@ export default function Solutions({ content }: SolutionsProps) {
                     : "h-full w-[86vw] grid-rows-[minmax(0,1.15fr)_auto] min-[900px]:w-[min(78vw,1180px)] min-[900px]:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] min-[900px]:grid-rows-1"
                 }`}
               >
-                {/* Photo with parallax */}
-                <div className={`relative overflow-hidden bg-bg ${reducedMotion ? "aspect-[16/10]" : ""}`}>
+                {/* Photo with parallax (opens the category) */}
+                <Link
+                  href={`/${locale}/solutions/${item.slug}`}
+                  onClick={(e) => openCategory(e, item)}
+                  data-panel-photo
+                  aria-label={`${content.explore}: ${item.title}`}
+                  className={`group/photo relative block overflow-hidden bg-bg ${reducedMotion ? "aspect-[16/10]" : ""}`}
+                >
                   <div data-panel-image className="absolute inset-y-0 -left-[10%] w-[120%]">
                     <Image
                       src={item.image}
@@ -182,11 +206,12 @@ export default function Solutions({ content }: SolutionsProps) {
                   </span>
                   <div className="absolute inset-x-5 bottom-5 flex items-end justify-between gap-4 text-white min-[900px]:inset-x-8 min-[900px]:bottom-8">
                     <p className="font-heading text-[clamp(40px,5.4vw,96px)] leading-[0.9]">{item.title}</p>
-                    <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-white text-red min-[900px]:size-16">
-                      <Icon name={item.icon} size={28} strokeWidth={1.25} />
+                    <span className="relative flex size-14 shrink-0 items-center justify-center rounded-full bg-white text-red transition-transform duration-700 group-hover/photo:rotate-[-45deg] group-hover/photo:scale-110 min-[900px]:size-16">
+                      <Icon name={item.icon} size={28} strokeWidth={1.25} className="transition-opacity duration-300 group-hover/photo:opacity-0" />
+                      <Icon name="arrow" size={26} className="absolute opacity-0 transition-opacity duration-300 group-hover/photo:opacity-100" />
                     </span>
                   </div>
-                </div>
+                </Link>
 
                 {/* Text */}
                 <div className="flex flex-col justify-between gap-6 p-6 min-[900px]:p-10 min-[1280px]:p-14">
@@ -238,10 +263,14 @@ export default function Solutions({ content }: SolutionsProps) {
                           <p className="font-heading mt-1 text-[22px] leading-none text-ink">{product.name}</p>
                         </div>
                       </div>
-                      <a href="#contact" className="label btn-red group inline-flex gap-3 !px-5 !py-3">
-                        {content.cta}
+                      <Link
+                        href={`/${locale}/solutions/${item.slug}`}
+                        onClick={(e) => openCategory(e, item)}
+                        className="label btn-red group inline-flex gap-3 !px-5 !py-3"
+                      >
+                        {content.explore}
                         <Icon name="arrow" size={14} className="transition-transform duration-500 group-hover:translate-x-1" />
-                      </a>
+                      </Link>
                     </div>
                   </div>
                 </div>

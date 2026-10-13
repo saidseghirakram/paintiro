@@ -10,11 +10,13 @@ type SiteState = {
   loadProgress: number;
   /** True once the loader has left; triggers the navbar and hero intros. */
   introDone: boolean;
+  /** True from the moment the loader curtain starts to leave (the hero must be drawn). */
+  revealing: boolean;
   /** Active Lenis instance (null when reduced motion or not mounted yet). */
   lenis: Lenis | null;
 };
 
-let state: SiteState = { loadProgress: 0, introDone: false, lenis: null };
+let state: SiteState = { loadProgress: 0, introDone: false, revealing: false, lenis: null };
 const listeners = new Set<() => void>();
 
 export function getSiteState(): SiteState {
@@ -31,7 +33,7 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-const serverState: SiteState = { loadProgress: 0, introDone: false, lenis: null };
+const serverState: SiteState = { loadProgress: 0, introDone: false, revealing: false, lenis: null };
 
 /** React hook: select a slice of the site state. */
 export function useSiteState<T>(selector: (s: SiteState) => T): T {

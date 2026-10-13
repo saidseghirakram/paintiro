@@ -297,26 +297,48 @@ html.lenis body {
   }
 }
 
-/* 10-year test: slanted rain */
-.weather-rain {
-  background-image: repeating-linear-gradient(
-    105deg,
-    transparent 0 14px,
-    rgba(255, 255, 255, 0.55) 14px 15px,
-    transparent 15px 31px
-  );
-  background-size: 200% 200%;
-  animation: weather-rain 0.5s linear infinite;
+/* 10-year test: slanted rain, two depths of drops */
+.weather-rain,
+.weather-rain::after {
+  background-image:
+    repeating-linear-gradient(104deg, transparent 0 23px, rgba(225, 235, 245, 0.42) 23px 24px, transparent 24px 57px),
+    repeating-linear-gradient(98deg, transparent 0 41px, rgba(225, 235, 245, 0.28) 41px 42px, transparent 42px 89px);
+  background-size: 113px 260px, 151px 340px;
+  animation: weather-rain 0.42s linear infinite;
+}
+.weather-rain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.55;
+  filter: blur(1.5px);
+  background-size: 181px 420px, 233px 520px;
+  animation-duration: 0.7s;
 }
 @keyframes weather-rain {
   to {
-    background-position: -62px 220px;
+    background-position: -60px 260px, -48px 340px;
+  }
+}
+
+/* 10-year test: wind-blown sand grain drifting across */
+.weather-sand {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.74  0 0 0 0 0.55  0 0 0 0 0.34  0 0 0 2.2 -1.1'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
+  background-size: 240px 240px;
+  opacity: 0.8;
+  animation: weather-sand 0.9s linear infinite;
+}
+@keyframes weather-sand {
+  to {
+    background-position: 240px 24px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .factory-fall,
-  .weather-rain {
+  .weather-rain,
+  .weather-rain::after,
+  .weather-sand {
     animation: none;
   }
 }
@@ -340,4 +362,62 @@ html.lenis body {
 
 @media (prefers-reduced-motion: reduce) {
   .gobo { animation: none; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Catalogue pages: loading states                                     */
+/* ------------------------------------------------------------------ */
+
+/* Shimmering placeholder block. */
+.skeleton {
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--ink) 6%, transparent) 30%,
+    color-mix(in srgb, var(--ink) 12%, transparent) 50%,
+    color-mix(in srgb, var(--ink) 6%, transparent) 70%
+  );
+  background-size: 300% 100%;
+  animation: skeleton-shine 1.6s ease-in-out infinite;
+}
+@keyframes skeleton-shine {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+/* Small paint drop filling with red, used next to loading labels. */
+.paint-loader {
+  position: relative;
+  width: 14px;
+  height: 18px;
+  border: 1px solid var(--red);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  overflow: hidden;
+}
+.paint-loader::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--red);
+  transform: translateY(100%);
+  animation: paint-fill 1.2s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+}
+@keyframes paint-fill {
+  0% {
+    transform: translateY(100%);
+  }
+  60%,
+  100% {
+    transform: translateY(0%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .paint-loader::after {
+    animation: none;
+  }
 }

@@ -48,7 +48,7 @@ export default async function HomePage({ params }: PageProps<"/[locale]">) {
         <Factory content={x.factory} />
         <DripDivider paint="#141414" background="#F6F5F2" />
         {/* 07 Solutions */}
-        <Solutions content={s.solutions} />
+        <Solutions content={s.solutions} locale={locale} />
         {/* 08 Colors */}
         <Colors content={s.colors} locale={locale} />
         {/* Algeria in color: city palettes, horizontal journey */}

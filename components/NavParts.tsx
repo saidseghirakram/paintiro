@@ -6,10 +6,13 @@ export function LanguageSwitch({
   locale,
   label,
   tone = "ink",
+  path = "",
 }: {
   locale: Locale;
   label: string;
   tone?: "ink" | "white";
+  /** Path after the locale, kept when switching language (e.g. "/products/irovella"). */
+  path?: string;
 }) {
   const active = tone === "ink" ? "text-ink" : "text-white";
   const inactive = tone === "ink" ? "text-muted hover:text-ink" : "text-white/60 hover:text-white";
@@ -24,7 +27,7 @@ export function LanguageSwitch({
           )}
           {/* Plain anchor: a full navigation always lands at the top of the new language. */}
           <a
-            href={`/${code}`}
+            href={`/${code}${path}`}
             hrefLang={code}
             lang={code}
             aria-current={code === locale ? "true" : undefined}

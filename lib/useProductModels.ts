@@ -18,6 +18,12 @@ export const PRODUCT_HEIGHT = 1.6;
  */
 const LABEL_FRONT_U = 0.235;
 
+/** Largest label texture width (≈ 1000 px per visible half, enough for 2× screens); bigger GLB textures are downscaled off the main thread. */
+const MAX_LABEL_WIDTH = 2048;
+
+/** Lets the browser paint a frame (keeps the loader animation smooth during heavy work). */
+export const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
 /** Vertical slice of the cut-out photos that holds the label (below the lid). */
 const PHOTO_LABEL_TOP = 0.19;
 const PHOTO_LABEL_BOTTOM = 1;
@@ -40,6 +46,41 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   return image.decode().then(() => image);
 }
 
+/**
+ * The exports carry 5000 px label textures: uploading one to the GPU freezes the
+ * page for a moment. They are resized to MAX_LABEL_WIDTH with createImageBitmap,
+ * which runs off the main thread.
+ */
+async function downscaleMaps(root: THREE.Object3D): Promise<void> {
+  const maps = new Set<THREE.Texture>();
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      const map = (material as THREE.MeshStandardMaterial).map;
+      if (map) maps.add(map);
+    }
+  });
+  await Promise.all(
+    [...maps].map(async (map) => {
+      const image = map.image as ImageBitmap | HTMLImageElement | undefined;
+      if (!image || image.width <= MAX_LABEL_WIDTH) return;
+      try {
+        const resized = await createImageBitmap(image, {
+          resizeWidth: MAX_LABEL_WIDTH,
+          resizeHeight: Math.round((image.height * MAX_LABEL_WIDTH) / image.width),
+          resizeQuality: "high",
+        });
+        if ("close" in image) image.close();
+        map.image = resized;
+        map.needsUpdate = true;
+      } catch {
+        // Keep the original size.
+      }
+    }),
+  );
+}
+
 function hasMesh(root: THREE.Object3D): boolean {
   let found = false;
   root.traverse((child) => {
@@ -54,8 +95,9 @@ function hasMesh(root: THREE.Object3D): boolean {
  * projection (x = sin θ), so the label wraps without stretching. The back
  * of the bucket gets a second copy of the front, like a real two-sided label.
  */
-function wrapPhoto(image: HTMLImageElement): THREE.CanvasTexture {
-  const width = 3072;
+async function wrapPhoto(image: HTMLImageElement): Promise<THREE.CanvasTexture> {
+  // The photos are ~1000 px wide: 2048 keeps all their detail.
+  const width = 2048;
   const height = Math.round(width / 3.47);
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -74,6 +116,8 @@ function wrapPhoto(image: HTMLImageElement): THREE.CanvasTexture {
   context.fillRect(0, 0, width, height);
 
   for (let x = 0; x < width; x++) {
+    // Work in slices so the loader keeps animating.
+    if (x > 0 && x % 384 === 0) await nextFrame();
     let theta = ((x + 0.5) / width - LABEL_FRONT_U) * Math.PI * 2;
     theta = Math.atan2(Math.sin(theta), Math.cos(theta));
     if (Math.abs(theta) > Math.PI / 2) theta -= Math.sign(theta) * Math.PI;
@@ -201,6 +245,79 @@ function ownMaterials(root: THREE.Object3D): THREE.MeshPhysicalMaterial[] {
   return materials;
 }
 
+/* ------------------------------------------------------------------ */
+/* Single product (catalogue pages)                                    */
+/* ------------------------------------------------------------------ */
+
+/** GLB with real geometry whose bucket mesh carries photo labels for the empty exports. */
+const TEMPLATE_MODEL = "/3d-products/PLAFONYA.glb";
+const sceneCache = new Map<string, Promise<THREE.Object3D | null>>();
+
+/** Loads a GLB once per page life; resolves to null when the file is missing or empty. */
+function loadScene(url: string): Promise<THREE.Object3D | null> {
+  let pending = sceneCache.get(url);
+  if (!pending) {
+    pending = new GLTFLoader()
+      .loadAsync(url)
+      .then(async (gltf) => {
+        if (!hasMesh(gltf.scene)) return null;
+        await downscaleMaps(gltf.scene);
+        return gltf.scene;
+      })
+      .catch(() => null);
+    sceneCache.set(url, pending);
+  }
+  return pending;
+}
+
+export type LoadedProductModel = ProductModel & { dispose: () => void };
+
+/**
+ * One product, normalized like the homepage ones (standing on y = 0, PRODUCT_HEIGHT tall,
+ * label facing +z at LABEL_FRONT_YAW). Same photo fallback when the GLB is empty.
+ */
+export async function loadProductModel(model: string, photo: string, scale = 1): Promise<LoadedProductModel | null> {
+  let root: THREE.Object3D | null = null;
+  let label: THREE.Texture | null = null;
+  const scene = await loadScene(model);
+  if (scene) {
+    root = scene.clone(true);
+  } else {
+    const template = await loadScene(TEMPLATE_MODEL);
+    let bucket: THREE.Mesh | null = null;
+    template?.traverse((child) => {
+      if (!bucket && (child as THREE.Mesh).isMesh) bucket = child as THREE.Mesh;
+    });
+    if (!bucket) return null;
+    try {
+      label = await wrapPhoto(await loadImage(photo));
+    } catch {
+      return null;
+    }
+    const source = bucket as THREE.Mesh;
+    const material = (source.material as THREE.MeshPhysicalMaterial).clone();
+    material.map = label;
+    const mesh = new THREE.Mesh(source.geometry, material);
+    mesh.position.copy(source.position);
+    mesh.quaternion.copy(source.quaternion);
+    mesh.scale.copy(source.scale);
+    root = new THREE.Group();
+    root.add(mesh);
+  }
+  const { pivot, radius } = normalize(root, scale);
+  const materials = ownMaterials(pivot);
+  return {
+    object: pivot,
+    materials,
+    radius,
+    fallback: Boolean(label),
+    dispose: () => {
+      materials.forEach((m) => m.dispose());
+      label?.dispose();
+    },
+  };
+}
+
 /**
  * Loads the 3D product of every chapter (each GLB once), reports progress to
  * the shared store for the Loader, and returns one ready-to-place model per
@@ -223,7 +340,7 @@ export function useProductModels() {
       if (cancelled) return;
       let sum = 0;
       progress.forEach((value) => (sum += value));
-      setSiteState({ loadProgress: Math.min(0.99, sum / (urls.length + 1)) });
+      setSiteState({ loadProgress: Math.min(0.9, (sum / (urls.length + 1)) * 0.9) });
     };
 
     const loader = new GLTFLoader();
@@ -236,7 +353,10 @@ export function useProductModels() {
               if (event.lengthComputable) progress.set(url, event.loaded / event.total);
               report();
             });
-            if (hasMesh(gltf.scene)) scenes.set(url, gltf.scene);
+            if (hasMesh(gltf.scene)) {
+              await downscaleMaps(gltf.scene);
+              scenes.set(url, gltf.scene);
+            }
           } catch {
             // Missing / broken file: handled by the photo fallback below.
           }
@@ -259,7 +379,7 @@ export function useProductModels() {
       await Promise.all(
         needed.map(async (photo) => {
           try {
-            const texture = wrapPhoto(await loadImage(photo));
+            const texture = await wrapPhoto(await loadImage(photo));
             textures.push(texture);
             labels.set(photo, texture);
           } catch {
@@ -304,7 +424,8 @@ export function useProductModels() {
       }
 
       setModels(created);
-      setSiteState({ loadProgress: 1 });
+      // The last 10% is the 3D scene warming up (reported by the showcase).
+      setSiteState({ loadProgress: 0.9 });
     };
 
     void run();

@@ -12,7 +12,8 @@
     "lint": "eslint",
     "frames:manifest": "node scripts/generate-manifest.mjs",
     "frames:optimize": "node scripts/optimize-frames.mjs && node scripts/generate-manifest.mjs",
-    "frames:extract": "node scripts/extract-frames.mjs"
+    "frames:extract": "node scripts/extract-frames.mjs",
+    "weathering:build": "node scripts/build-weathering.mjs"
   },
   "dependencies": {
     "gsap": "^3.15.0",
